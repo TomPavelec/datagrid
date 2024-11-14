@@ -1,26 +1,24 @@
-<?php
+<?php declare(strict_types = 1);
 
-declare(strict_types=1);
+namespace Contributte\Datagrid\DataSource;
 
-namespace Ublaboo\DataGrid\DataSource;
-
+use Contributte\Datagrid\AggregationFunction\IAggregatable;
+use Contributte\Datagrid\AggregationFunction\IAggregationFunction;
+use Contributte\Datagrid\Exception\DatagridDateTimeHelperException;
+use Contributte\Datagrid\Exception\DatagridException;
+use Contributte\Datagrid\Filter\FilterDate;
+use Contributte\Datagrid\Filter\FilterDateRange;
+use Contributte\Datagrid\Filter\FilterMultiSelect;
+use Contributte\Datagrid\Filter\FilterRange;
+use Contributte\Datagrid\Filter\FilterSelect;
+use Contributte\Datagrid\Filter\FilterText;
+use Contributte\Datagrid\Utils\DateTimeHelper;
+use Contributte\Datagrid\Utils\Sorting;
 use Doctrine\ORM\Query;
 use Doctrine\ORM\QueryBuilder;
 use Doctrine\ORM\Tools\Pagination\Paginator;
 use Nette\SmartObject;
-use Nette\Utils\Strings;
-use Ublaboo\DataGrid\AggregationFunction\IAggregatable;
-use Ublaboo\DataGrid\AggregationFunction\IAggregationFunction;
-use Ublaboo\DataGrid\Exception\DataGridDateTimeHelperException;
-use Ublaboo\DataGrid\Exception\DataGridException;
-use Ublaboo\DataGrid\Filter\FilterDate;
-use Ublaboo\DataGrid\Filter\FilterDateRange;
-use Ublaboo\DataGrid\Filter\FilterMultiSelect;
-use Ublaboo\DataGrid\Filter\FilterRange;
-use Ublaboo\DataGrid\Filter\FilterSelect;
-use Ublaboo\DataGrid\Filter\FilterText;
-use Ublaboo\DataGrid\Utils\DateTimeHelper;
-use Ublaboo\DataGrid\Utils\Sorting;
+use function str_contains;
 
 /**
  * @method void onDataLoaded(array $result)
@@ -35,47 +33,40 @@ class DoctrineDataSource extends FilterableDataSource implements IDataSource, IA
 	 *
 	 * @var array|callable[]
 	 */
-	public $onDataLoaded;
+	public array $onDataLoaded;
 
-	/**
-	 * @var QueryBuilder
-	 */
-	protected $dataSource;
+	protected QueryBuilder $dataSource;
 
-	/**
-	 * @var string
-	 */
-	protected $primaryKey;
+	protected ?string $rootAlias = null;
 
-	/**
-	 * @var string|null
-	 */
-	protected $rootAlias;
+	protected int $placeholder = 0;
 
-	/**
-	 * @var int
-	 */
-	protected $placeholder;
+	/** @var array<string, mixed> */
+	protected array $hints = [];
 
-
-	public function __construct(QueryBuilder $dataSource, string $primaryKey)
+	public function __construct(QueryBuilder $dataSource, protected string $primaryKey)
 	{
 		$this->placeholder = count($dataSource->getParameters());
 		$this->dataSource = $dataSource;
-		$this->primaryKey = $primaryKey;
 	}
 
+	public function setQueryHint(string $name, mixed $value): IDataSource
+	{
+		$this->hints[$name] = $value;
+
+		return $this;
+	}
 
 	public function getQuery(): Query
 	{
-		return $this->dataSource->getQuery();
+		$query = $this->dataSource->getQuery();
+
+		foreach ($this->hints as $name => $value) {
+			$query->setHint($name, $value);
+		}
+
+		return $query;
 	}
-
-
-	// *******************************************************************************
-	// *                          IDataSource implementation                         *
-	// *******************************************************************************
-
 
 	public function getCount(): int
 	{
@@ -89,7 +80,6 @@ class DoctrineDataSource extends FilterableDataSource implements IDataSource, IA
 
 		return (int) $dataSource->getQuery()->getSingleScalarResult();
 	}
-
 
 	/**
 	 * {@inheritDoc}
@@ -109,7 +99,6 @@ class DoctrineDataSource extends FilterableDataSource implements IDataSource, IA
 		return $data;
 	}
 
-
 	/**
 	 * {@inheritDoc}
 	 */
@@ -120,13 +109,12 @@ class DoctrineDataSource extends FilterableDataSource implements IDataSource, IA
 		foreach ($condition as $column => $value) {
 			$c = $this->checkAliases($column);
 
-			$this->dataSource->andWhere("$c = :$p")
+			$this->dataSource->andWhere(sprintf('%s = :%s', $c, $p))
 				->setParameter($p, $value);
 		}
 
 		return $this;
 	}
-
 
 	public function limit(int $offset, int $limit): IDataSource
 	{
@@ -134,7 +122,6 @@ class DoctrineDataSource extends FilterableDataSource implements IDataSource, IA
 
 		return $this;
 	}
-
 
 	public function sort(Sorting $sorting): IDataSource
 	{
@@ -166,25 +153,22 @@ class DoctrineDataSource extends FilterableDataSource implements IDataSource, IA
 		return $this;
 	}
 
-
 	/**
 	 * Get unique int value for each instance class (self)
 	 */
 	public function getPlaceholder(): string
 	{
-		$return = 'param' . (string) ($this->placeholder + 1);
+		$return = 'param' . ($this->placeholder + 1);
 
 		$this->placeholder++;
 
 		return $return;
 	}
 
-
 	public function processAggregation(IAggregationFunction $function): void
 	{
 		$function->processDataSource(clone $this->dataSource);
 	}
-
 
 	protected function applyFilterDate(FilterDate $filter): void
 	{
@@ -196,15 +180,14 @@ class DoctrineDataSource extends FilterableDataSource implements IDataSource, IA
 				$date = DateTimeHelper::tryConvertToDateTime($value, [$filter->getPhpFormat()]);
 				$c = $this->checkAliases($column);
 
-				$this->dataSource->andWhere("$c >= :$p1 AND $c <= :$p2")
+				$this->dataSource->andWhere(sprintf('%s >= :%s AND %s <= :%s', $c, $p1, $c, $p2))
 					->setParameter($p1, $date->format('Y-m-d 00:00:00'))
 					->setParameter($p2, $date->format('Y-m-d 23:59:59'));
-			} catch (DataGridDateTimeHelperException $ex) {
+			} catch (DatagridDateTimeHelperException) {
 				// ignore the invalid filter value
 			}
 		}
 	}
-
 
 	protected function applyFilterDateRange(FilterDateRange $filter): void
 	{
@@ -221,11 +204,11 @@ class DoctrineDataSource extends FilterableDataSource implements IDataSource, IA
 
 				$p = $this->getPlaceholder();
 
-				$this->dataSource->andWhere("$c >= :$p")->setParameter(
+				$this->dataSource->andWhere(sprintf('%s >= :%s', $c, $p))->setParameter(
 					$p,
 					$dateFrom->format('Y-m-d H:i:s')
 				);
-			} catch (DataGridDateTimeHelperException $ex) {
+			} catch (DatagridDateTimeHelperException) {
 				// ignore the invalid filter value
 			}
 		}
@@ -237,16 +220,15 @@ class DoctrineDataSource extends FilterableDataSource implements IDataSource, IA
 
 				$p = $this->getPlaceholder();
 
-				$this->dataSource->andWhere("$c <= :$p")->setParameter(
+				$this->dataSource->andWhere(sprintf('%s <= :%s', $c, $p))->setParameter(
 					$p,
 					$dateTo->format('Y-m-d H:i:s')
 				);
-			} catch (DataGridDateTimeHelperException $ex) {
+			} catch (DatagridDateTimeHelperException) {
 				// ignore the invalid filter value
 			}
 		}
 	}
-
 
 	protected function applyFilterRange(FilterRange $filter): void
 	{
@@ -258,15 +240,14 @@ class DoctrineDataSource extends FilterableDataSource implements IDataSource, IA
 
 		if (is_numeric($valueFrom)) {
 			$p = $this->getPlaceholder();
-			$this->dataSource->andWhere("$c >= :$p")->setParameter($p, $valueFrom);
+			$this->dataSource->andWhere(sprintf('%s >= :%s', $c, $p))->setParameter($p, $valueFrom);
 		}
 
 		if (is_numeric($valueTo)) {
 			$p = $this->getPlaceholder();
-			$this->dataSource->andWhere("$c <= :$p")->setParameter($p, $valueTo);
+			$this->dataSource->andWhere(sprintf('%s <= :%s', $c, $p))->setParameter($p, $valueTo);
 		}
 	}
-
 
 	protected function applyFilterText(FilterText $filter): void
 	{
@@ -289,8 +270,10 @@ class DoctrineDataSource extends FilterableDataSource implements IDataSource, IA
 
 			foreach ($words as $word) {
 				$exprs[] = $this->dataSource->expr()->like(
-					$c,
-					$this->dataSource->expr()->literal("%$word%")
+					(string) $this->dataSource->expr()->lower($c),
+					$this->dataSource->expr()->lower(
+						$this->dataSource->expr()->literal('%' . $word . '%')
+					)
 				);
 			}
 		}
@@ -299,7 +282,6 @@ class DoctrineDataSource extends FilterableDataSource implements IDataSource, IA
 
 		$this->dataSource->andWhere($or);
 	}
-
 
 	protected function applyFilterMultiSelect(FilterMultiSelect $filter): void
 	{
@@ -312,7 +294,6 @@ class DoctrineDataSource extends FilterableDataSource implements IDataSource, IA
 		$this->dataSource->andWhere($expr)->setParameter($p, $values);
 	}
 
-
 	protected function applyFilterSelect(FilterSelect $filter): void
 	{
 		$p = $this->getPlaceholder();
@@ -320,24 +301,19 @@ class DoctrineDataSource extends FilterableDataSource implements IDataSource, IA
 		foreach ($filter->getCondition() as $column => $value) {
 			$c = $this->checkAliases($column);
 
-			$this->dataSource->andWhere("$c = :$p")
+			$this->dataSource->andWhere(sprintf('%s = :%s', $c, $p))
 				->setParameter($p, $value);
 		}
 	}
 
-
-	/**
-	 * {@inheritDoc}
-	 */
-	protected function getDataSource()
+	protected function getDataSource(): QueryBuilder
 	{
 		return $this->dataSource;
 	}
 
-
 	private function checkAliases(string $column): string
 	{
-		if (Strings::contains($column, '.')) {
+		if (str_contains($column, '.')) {
 			return $column;
 		}
 
@@ -345,7 +321,7 @@ class DoctrineDataSource extends FilterableDataSource implements IDataSource, IA
 			$rootAlias = $this->dataSource->getRootAliases();
 
 			if ($rootAlias === []) {
-				throw new DataGridException('No root alias given from datasource');
+				throw new DatagridException('No root alias given from datasource');
 			}
 
 			$this->rootAlias = current($rootAlias);
@@ -354,7 +330,6 @@ class DoctrineDataSource extends FilterableDataSource implements IDataSource, IA
 		return $this->rootAlias . '.' . $column;
 	}
 
-
 	private function usePaginator(): bool
 	{
 		$hasJoin = (bool) $this->dataSource->getDQLPart('join');
@@ -362,4 +337,5 @@ class DoctrineDataSource extends FilterableDataSource implements IDataSource, IA
 
 		return $hasJoin || $hasGroupBy;
 	}
+
 }

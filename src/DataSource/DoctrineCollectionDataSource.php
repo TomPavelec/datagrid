@@ -1,76 +1,54 @@
-<?php
+<?php declare(strict_types = 1);
 
-declare(strict_types=1);
+namespace Contributte\Datagrid\DataSource;
 
-namespace Ublaboo\DataGrid\DataSource;
-
+use Contributte\Datagrid\AggregationFunction\IAggregatable;
+use Contributte\Datagrid\AggregationFunction\IAggregationFunction;
+use Contributte\Datagrid\Exception\DatagridDateTimeHelperException;
+use Contributte\Datagrid\Filter\FilterDate;
+use Contributte\Datagrid\Filter\FilterDateRange;
+use Contributte\Datagrid\Filter\FilterMultiSelect;
+use Contributte\Datagrid\Filter\FilterRange;
+use Contributte\Datagrid\Filter\FilterSelect;
+use Contributte\Datagrid\Filter\FilterText;
+use Contributte\Datagrid\Utils\DateTimeHelper;
+use Contributte\Datagrid\Utils\Sorting;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\Common\Collections\Criteria;
 use Doctrine\Common\Collections\Selectable;
-use Ublaboo\DataGrid\AggregationFunction\IAggregatable;
-use Ublaboo\DataGrid\AggregationFunction\IAggregationFunction;
-use Ublaboo\DataGrid\Exception\DataGridDateTimeHelperException;
-use Ublaboo\DataGrid\Filter\FilterDate;
-use Ublaboo\DataGrid\Filter\FilterDateRange;
-use Ublaboo\DataGrid\Filter\FilterMultiSelect;
-use Ublaboo\DataGrid\Filter\FilterRange;
-use Ublaboo\DataGrid\Filter\FilterSelect;
-use Ublaboo\DataGrid\Filter\FilterText;
-use Ublaboo\DataGrid\Utils\DateTimeHelper;
-use Ublaboo\DataGrid\Utils\Sorting;
+use LogicException;
 
 final class DoctrineCollectionDataSource extends FilterableDataSource implements
 	IDataSource,
 	IAggregatable
 {
 
-	/**
-	 * @var Collection&Selectable
-	 */
-	protected $dataSource;
+	protected Selectable&Collection $dataSource;
 
-	/**
-	 * @var string
-	 */
-	protected $primaryKey;
+	protected Criteria $criteria;
 
-	/**
-	 * @var Criteria
-	 */
-	protected $criteria;
-
-
-	public function __construct(Collection $collection, string $primaryKey)
+	public function __construct(Collection $collection, protected string $primaryKey)
 	{
 		if (!($collection instanceof Selectable)) {
-			throw new \LogicException(sprintf('Given collection must implement Selectable'));
+			throw new LogicException(sprintf('Given collection must implement Selectable'));
 		}
 
 		$this->criteria = Criteria::create();
 		$this->dataSource = $collection;
-		$this->primaryKey = $primaryKey;
 	}
-
-
-	// *******************************************************************************
-	// *                          IDataSource implementation                         *
-	// *******************************************************************************
-
 
 	public function getCount(): int
 	{
-		return $this->getFilteredCollection()->count();
+		return $this->dataSource->matching($this->criteria)->count();
 	}
-
 
 	/**
 	 * {@inheritDoc}
 	 */
 	public function getData(): array
 	{
-		return $this->getFilteredCollection()->toArray();
+		return $this->dataSource->matching($this->criteria)->toArray();
 	}
-
 
 	/**
 	 * {@inheritDoc}
@@ -89,14 +67,12 @@ final class DoctrineCollectionDataSource extends FilterableDataSource implements
 		return $this;
 	}
 
-
 	public function limit(int $offset, int $limit): IDataSource
 	{
 		$this->criteria->setFirstResult($offset)->setMaxResults($limit);
 
 		return $this;
 	}
-
 
 	public function sort(Sorting $sorting): IDataSource
 	{
@@ -121,21 +97,18 @@ final class DoctrineCollectionDataSource extends FilterableDataSource implements
 		return $this;
 	}
 
-
 	public function processAggregation(IAggregationFunction $function): void
 	{
 		$function->processDataSource(clone $this->dataSource);
 	}
 
-
 	/**
-	 * {@inheritDoc}
+	 * @return Collection&Selectable
 	 */
-	public function getDataSource()
+	public function getDataSource(): mixed
 	{
 		return $this->dataSource;
 	}
-
 
 	protected function applyFilterDate(FilterDate $filter): void
 	{
@@ -147,12 +120,11 @@ final class DoctrineCollectionDataSource extends FilterableDataSource implements
 				$to = Criteria::expr()->lte($filter->getColumn(), $date->format('Y-m-d 23:59:59'));
 
 				$this->criteria->andWhere($from)->andWhere($to);
-			} catch (DataGridDateTimeHelperException $ex) {
+			} catch (DatagridDateTimeHelperException) {
 				// ignore the invalid filter value
 			}
 		}
 	}
-
 
 	protected function applyFilterDateRange(FilterDateRange $filter): void
 	{
@@ -161,33 +133,32 @@ final class DoctrineCollectionDataSource extends FilterableDataSource implements
 
 		$valueFrom = $values['from'];
 
-		if ((bool) $valueFrom) {
+		if ($valueFrom) {
 			try {
 				$dateFrom = DateTimeHelper::tryConvertToDateTime($valueFrom, [$filter->getPhpFormat()]);
 				$dateFrom->setTime(0, 0, 0);
 
 				$expr = Criteria::expr()->gte($filter->getColumn(), $dateFrom->format('Y-m-d H:i:s'));
 				$this->criteria->andWhere($expr);
-			} catch (DataGridDateTimeHelperException $ex) {
+			} catch (DatagridDateTimeHelperException) {
 				// ignore the invalid filter value
 			}
 		}
 
 		$valueTo = $values['to'];
 
-		if ((bool) $valueTo) {
+		if ($valueTo) {
 			try {
 				$dateTo = DateTimeHelper::tryConvertToDateTime($valueTo, [$filter->getPhpFormat()]);
 				$dateTo->setTime(23, 59, 59);
 
 				$expr = Criteria::expr()->lte($filter->getColumn(), $dateTo->format('Y-m-d H:i:s'));
 				$this->criteria->andWhere($expr);
-			} catch (DataGridDateTimeHelperException $ex) {
+			} catch (DatagridDateTimeHelperException) {
 				// ignore the invalid filter value
 			}
 		}
 	}
-
 
 	protected function applyFilterRange(FilterRange $filter): void
 	{
@@ -206,7 +177,6 @@ final class DoctrineCollectionDataSource extends FilterableDataSource implements
 			$this->criteria->andWhere($expr);
 		}
 	}
-
 
 	protected function applyFilterText(FilterText $filter): void
 	{
@@ -230,7 +200,6 @@ final class DoctrineCollectionDataSource extends FilterableDataSource implements
 		$this->criteria->andWhere($expr);
 	}
 
-
 	protected function applyFilterMultiSelect(FilterMultiSelect $filter): void
 	{
 		$values = $filter->getCondition()[$filter->getColumn()];
@@ -238,7 +207,6 @@ final class DoctrineCollectionDataSource extends FilterableDataSource implements
 		$expr = Criteria::expr()->in($filter->getColumn(), $values);
 		$this->criteria->andWhere($expr);
 	}
-
 
 	protected function applyFilterSelect(FilterSelect $filter): void
 	{
@@ -248,9 +216,4 @@ final class DoctrineCollectionDataSource extends FilterableDataSource implements
 		}
 	}
 
-
-	private function getFilteredCollection(): Collection
-	{
-		return $this->dataSource->matching($this->criteria);
-	}
 }

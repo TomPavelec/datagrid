@@ -59,22 +59,22 @@ composer require ublaboo/datagrid
 - Hideable columns
 - Ajax spinners
 
-DataGrid can do some really useful stuff.
+Datagrid can do some really useful stuff.
 
 Let's create a datagrid component!
 We will demonstrate our examples in Presenters.
 
 ```php
-use Ublaboo\DataGrid\DataGrid;
+use Contributte\Datagrid\Datagrid;
 
 class SimplePresenter extends BasePresenter
 {
 
 	public function createComponentSimpleGrid($name)
 	{
-		$grid = new DataGrid($this, $name);
+		$grid = new Datagrid($this, $name);
 
-		$grid->setDataSource($this->db->select('*')->from('ublaboo_example'));
+		$grid->setDataSource($this->db->select('*')->from('example'));
 		$grid->addColumnText('name', 'Name');
 	}
 
@@ -82,15 +82,3 @@ class SimplePresenter extends BasePresenter
 ```
 
 And that's it. Go check the app. :)
-
-When you don't like pagination, you can disable it:
-
-```php
-$grid->setPagination(false);
-```
-
-But that would be a long dump - there are about a thousand rows in database. To change the items per page, select options you will do that via:
-
-```php
-$grid->setItemsPerPageList([1, 100, 9090, 2]);
-```
