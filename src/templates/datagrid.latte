@@ -262,6 +262,7 @@
 												{if isset($filter['inline_edit'][$key])}
 													{if $filter['inline_edit'][$key] instanceof \Nette\Forms\Container}
 														{foreach $filter['inline_edit'][$key]->getControls() as $inlineEditControl}
+															{label $inlineEditControl /}
 															{input $inlineEditControl}
 														{/foreach}
 													{else}
